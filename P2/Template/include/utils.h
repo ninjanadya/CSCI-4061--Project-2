@@ -15,12 +15,34 @@
 #include <ctype.h>
 
 #define chunkSize 1024
+#define filePathMsgSize 50
 #define MSGSIZE 1100
+#define ENDTYPE 1000
 #define ACKTYPE 1100
+
+#define PERM 0666 // permissions for sending chunk data
+#define ENDMSG "END\0" // end message
+#define ACKMSG "ACK\0" // ACK
 
 struct msgBuffer {
     long msgType;
     char msgText[MSGSIZE];
+};
+
+struct myMsgBuffer {
+    long msgType;
+    char msgText[chunkSize+1];
+};
+
+struct filePathBuffer{
+  long msgType;
+  char msgText[filePathMsgSize+1];
+};
+
+struct MapperRR {
+  int current;
+  int max;
+  int (*next) (int curr, int max);
 };
 
 // mapper side
