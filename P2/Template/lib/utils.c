@@ -1,13 +1,5 @@
 #include "utils.h"
 
-// used in the MapperRR struct
-int next(int curr, int max){
-  curr++;
-  if(curr > max){
-    curr = (curr % max);
-  }
-}
-
 // returns the next chunk of data
 char *getChunkData(int mapperID) {
   // open message queue
@@ -19,67 +11,82 @@ char *getChunkData(int mapperID) {
   memset(chunk.msgText, '\0', chunkSize+1);
   msgrcv(qid, &chunk, sizeof(struct myMsgBuffer), mapperID, 0);
   // check for END message and send ACK to master
-  if(chunk.msgText == ENDMSG){
+  char* c = (char *)(malloc(sizeof(char)*(chunkSize+1)));
+  strcpy(c, chunk.msgText);
+  if(!strcmp(c, ENDMSG)){
     struct myMsgBuffer endmsg;
     chunk.msgType = ACKTYPE;
-    strcpy(chunk.msgText, ACKMSG);
+    strcpy(endmsg.msgText, ACKMSG);
     msgsnd(qid, &endmsg, sizeof(struct myMsgBuffer), 0);
   }
-  char* c;
-  strcpy(c, chunk.msgText);
-  // close queue
-  msgctl(qid, IPC_RMID, 0);
   return c;
-}
-
-// sets the buffer to the next up to buffer size of chars from input
-int setNextChunk(char* buffer, char* input, long* offset){
-  int i;
-  memset(buffer, '\0', chunkSize + 1); // setting the buffer to contain nothing
-  for(i = *offset; i < *offset+chunkSize; i++){
-    buffer[i] = input[i];
-    if(input[i] == '\0'){ // means its end of input
-      return -1;
-    }    
-  }
-  while(buffer[i] != ' '){ // end buffer at the last space from chunk
-    buffer[i] = '\0';      // so no words get cut off
-    i--;
-  }
-  *offset = i;
-  return 0;
 }
 
 // sends chunks of size 1024 to the mappers in RR fashion
 void sendChunkData(char *inputFile, int nMappers) {
+  printf("in send chunk\n");
   key_t key = ftok(".", 5584353); // generating a unique key
-  int qid = msgget(key, PERM | IPC_CREAT); // creating the message queue
+  int qid;
+  if ((qid = msgget(key, PERM | IPC_CREAT)) < 0) {
+    printf("msgget error\n");
+  } // creating the message queue
 
   struct myMsgBuffer chunk; // the buffer used to send chunks of data to the mappers
-  long* currOffSet = 0; // keeps track of how far we are into the inputFile
+  int fd = open(inputFile, O_CREAT | O_RDONLY, 0777); // open the file
   
   // keeps track of which mapper to send data to in RR fashion
-  struct MapperRR onMapper;
-  onMapper.current = 1;
-  onMapper.max = nMappers;
+  int onMapper = 1;
 
-  while(setNextChunk(chunk.msgText, inputFile, currOffSet) != -1){ // send messages to queue in RR fashion
-    printf("in while loop\n");
-    chunk.msgType = onMapper.current; // sets msg type to current mapper
-    msgsnd(qid, &chunk, sizeof(struct myMsgBuffer), 0); // sends chunk to mapper
-    onMapper.current = onMapper.next(onMapper.current, onMapper.max); // gets next mapper to which to send msg to
+  int nread;
+  memset(chunk.msgText, '\0', chunkSize+1);
+  while((nread = read(fd, chunk.msgText, chunkSize)) > 0){ // send messages to queue in RR fashion
+    printf("buffer: %s\nnread: %d\n", chunk.msgText, nread);
+    if(nread == chunkSize){ // find the closest space if nread == 1024
+      int i = 0;
+      while(chunk.msgText[nread+i-1] != ' '){
+      
+	chunk.msgText[nread+i-1] = '\0';
+	i--;
+      }
+      chunk.msgText[nread+i-1] = '\0';
+      lseek(fd, i, SEEK_CUR); // go back to space in file and skip over it
+      printf("i: %d\nseek: %d\n", i, SEEK_CUR);
+    }
+    chunk.msgType = onMapper; // sets msg type to current mapper
+    if(msgsnd(qid, &chunk, sizeof(chunk.msgText), 0) == -1){
+      perror("failed to send msg\n");
+    }// sends chunk to mapper
+    struct myMsgBuffer recv;
+    memset(chunk.msgText, '\0', chunkSize+1);
+    msgrcv(qid, &recv, sizeof(chunk.msgText), onMapper, 0);
+    printf("msg received for %d: %s\n", onMapper, recv.msgText);
+
+    // set to next mapper
+    onMapper++;
+    if(onMapper > nMappers){
+      onMapper = 1;
+    }
+    memset(chunk.msgText, '\0', chunkSize+1);
   }
+  close(fd); // close the file as we have written out all of its contents
+  printf("out of while loop\n");
+
   // Send END messages to each mapper
   memset(chunk.msgText, '\0', chunkSize+1);
   strcpy(chunk.msgText, ENDMSG);
   for(int i = 1; i <= nMappers; i++){
+    printf("msg end i: %d\n", i);
     chunk.msgType = i;
-    msgsnd(qid, &chunk, sizeof(struct myMsgBuffer), 0);
+    if(msgsnd(qid, &chunk, sizeof(struct myMsgBuffer), 0) == -1){
+      perror("Failed to send end msg\n");
+    }
   }
+  printf("end msgs sent\n");
   // wait for ACK from mappers
   for(int i = 0; i < nMappers; i++){
     msgrcv(qid, &chunk, sizeof(struct myMsgBuffer), ACKTYPE, 0); 
   }
+  printf("received acks!\n");
   // close the message queue
   msgctl(qid, IPC_RMID, 0);
 }

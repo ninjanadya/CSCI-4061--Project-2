@@ -39,12 +39,6 @@ struct filePathBuffer{
   char msgText[filePathMsgSize+1];
 };
 
-struct MapperRR {
-  int current;
-  int max;
-  int (*next) (int curr, int max);
-};
-
 // mapper side
 int validChar(char c);
 char *getWord(char *chunk, int *i);

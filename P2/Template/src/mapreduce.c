@@ -50,6 +50,7 @@ int main(int argc, char *argv[]) {
 	int status;
 	pid_t pid = fork();
 	if(pid == 0){
+	  printf("about to send chunks\n");
 		//send chunks of data to the mappers in RR fashion
 		sendChunkData(inputFile, nMappers);
 		exit(0);
