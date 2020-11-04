@@ -23,7 +23,7 @@ $ ./mapreduce 5 2 test/T1/F1.txt
 # Contributions
 * Team met via Zoom and worked on the code via a shared github repository
 * Majority of coding, testing, and debugging were performed by Maxim and Sean
-* README.md writen by Nadya
+* CSE Lab Machine testing and README.md writen by Nadya
 
 * test machine : apollo.cselabs.umn.edu
 * date : 11-03-2020
