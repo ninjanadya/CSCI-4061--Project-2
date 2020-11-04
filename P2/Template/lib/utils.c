@@ -33,7 +33,7 @@ void sendChunkData(char *inputFile, int nMappers) {
   } // creating the message queue
 
   int fd = open(inputFile, O_CREAT | O_RDONLY, 0777); // open the file
-  
+
   // keeps track of which mapper to send data to in RR fashion
   long onMapper = 1;
 
@@ -45,7 +45,7 @@ void sendChunkData(char *inputFile, int nMappers) {
     if(nread == chunkSize){ // find the closest space if nread == 1024
       int i = 0;
       while(chunk.msgText[nread+i-1] != ' '){
-      
+
 	chunk.msgText[nread+i-1] = '\0';
 	i--;
       }
@@ -84,7 +84,7 @@ void sendChunkData(char *inputFile, int nMappers) {
   printf("end msgs sent\n");
   // wait for ACK from mappers
   for(int i = 0; i < nMappers; i++){
-    msgrcv(qid, &chunk, sizeof(struct myMsgBuffer), ACKTYPE, 0); 
+    msgrcv(qid, &chunk, sizeof(struct myMsgBuffer), ACKTYPE, 0);
   }
   printf("received acks!\n");
   // close the message queue
@@ -115,13 +115,17 @@ int getInterData(char *key, int reducerID) {
   // check for END message and send ACK to master
   //char cmp[filePathMsgSize+1];
   //strcpy(cmp, f.msgText);
-  if(f.msgText == ENDMSG){ //*********** There is probably something wrong with this if statement
-    struct myMsgBuffer endmsg;
+  printf("f.msgText is %s\n", f.msgText);
+  if(!strcmp(f.msgText, ENDMSG)){
+    printf("getinderdata if\n");
     f.msgType = ACKTYPE;
+    memset(f.msgText, '\0', filePathMsgSize+1);
     strcpy(f.msgText, ACKMSG);
-    msgsnd(qid, &endmsg, sizeof(struct filePathBuffer), 0);
+    msgsnd(qid, &f, sizeof(struct filePathBuffer), 0);
+    return 0;
   }else{
     strcpy(key, f.msgText); // copy file path to the key
+    return 1;
   }
   return 0;
 }
@@ -131,7 +135,7 @@ int traverseDirectory(int mapperID, int qid, int nReducers){
   printf("in traverse for mapper %d\n", mapperID);
   char path[50] = "output/MapOut/Map_";
   char id[5];
-  sprintf(id, "%d", mapperID);
+  sprintf(id, "%d/", mapperID);
   strcat(path, id);
   printf("built path\n");
   DIR* dir = opendir(path);
@@ -143,18 +147,19 @@ int traverseDirectory(int mapperID, int qid, int nReducers){
   struct dirent* entry;
 
   while ((entry = readdir(dir)) != NULL) {
-    
-    if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) 
+
+    if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
       continue; // do nothing for these directories
 
     if (entry->d_type == DT_REG) { // only care about .txt files
       printf("in file: %s\n", entry->d_name);
       struct filePathBuffer f;
       strcpy(f.msgText, path);
+
       strcat(f.msgText, entry->d_name); // construct file path to send
       f.msgType = hashFunction(f.msgText, nReducers);
       msgsnd(qid, (void *) &f, sizeof(struct filePathBuffer), 0); // send file path to reducer
-    }       
+    }
   }
   closedir(dir);
   return 0;
@@ -173,15 +178,16 @@ void shuffle(int nMappers, int nReducers) {
   printf("traversed dir\n");
   //send END message to reducers
   struct filePathBuffer endmsg;
-  endmsg.msgType = ENDTYPE;
+
   strcpy(endmsg.msgText, ENDMSG);
   for(int i = 1; i <= nReducers; i++){
+    endmsg.msgType = i;
     msgsnd(qid, &endmsg, sizeof(struct filePathBuffer), 0);
   }
   printf("send end msgs to reducers\n");
   // wait for ACK from the reducers for END notification
   for(int i = 0; i < nReducers; i++){
-    msgrcv(qid, &endmsg, sizeof(struct filePathBuffer), ACKTYPE, 0); 
+    msgrcv(qid, &endmsg, sizeof(struct filePathBuffer), ACKTYPE, 0);
   }
   printf("received ACK from reducers\n");
   // close the message queue

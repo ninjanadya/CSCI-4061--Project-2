@@ -44,6 +44,7 @@ void reduce(char *key) {
 	char* wordFileName = key;
 	int fd = open(wordFileName, O_RDONLY);
 	if (fd < 0){
+		printf("in reducer reduce\n");
 		printf("ERROR: Cannot open the file %s\n", wordFileName);
 		exit(0);
 	}
@@ -90,6 +91,7 @@ void writeFinalDS(int reducerID){
 
 	int fdReduce = open(reduceFileName, O_CREAT | O_WRONLY, 0777);
 	if (fdReduce < 0){
+		printf("in reducer write final ds\n");
 		printf("ERROR: Cannot open the file %s\n", reduceFileName);
 		exit(0);
 	}
@@ -124,7 +126,7 @@ int main(int argc, char *argv[]) {
 		printf("./reducer reducerID");
 	}
 
-	// initialize 
+	// initialize
 	int reducerID = strtol(argv[1], NULL, 10);
 	finalDS = NULL;
 
