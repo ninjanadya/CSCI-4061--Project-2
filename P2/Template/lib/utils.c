@@ -112,6 +112,7 @@ int getInterData(char *key, int reducerID) {
   f.msgType = reducerID;
   memset(f.msgText, '\0', filePathMsgSize+1);
   msgrcv(qid, &f, sizeof(struct filePathBuffer), reducerID, 0);
+  printf("reducerID caller: %d    f.msgtype is %d\n", reducerID, f.msgType);
   // check for END message and send ACK to master
   //char cmp[filePathMsgSize+1];
   //strcpy(cmp, f.msgText);
@@ -157,7 +158,7 @@ int traverseDirectory(int mapperID, int qid, int nReducers){
       strcpy(f.msgText, path);
 
       strcat(f.msgText, entry->d_name); // construct file path to send
-      f.msgType = hashFunction(f.msgText, nReducers);
+      f.msgType = hashFunction(f.msgText, nReducers) + 1;
       msgsnd(qid, (void *) &f, sizeof(struct filePathBuffer), 0); // send file path to reducer
     }
   }
