@@ -9,9 +9,9 @@ Then run:
 $ ./mapreduce #mappers #reducers inputFile
 
 Where 
- #mappers is the number of mapper processes
- #reducers is the number of reducer processes
- inputFile is the textFile to test
+ #mappers is the number of mapper processes,
+ #reducers is the number of reducer processes,
+ inputFile is the textFile to test,
 
 Example:
 $ ./mapreduce 5 2 test/T1/F1.txt
@@ -20,7 +20,7 @@ $ ./mapreduce 5 2 test/T1/F1.txt
 
 * Assumptions were made solely based on the ones in the Project 1 and 2 documents.
 
-#Contributions
+# Contributions
 * Team met via Zoom and worked on the code via a shared github repository
 * Majority of coding, testing, and debugging were performed by Maxim and Sean
 * README.md writen by Nadya
