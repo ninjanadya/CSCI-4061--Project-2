@@ -29,11 +29,13 @@ struct msgBuffer {
     char msgText[MSGSIZE];
 };
 
+// struct used for receiving chunks
 struct myMsgBuffer {
     long msgType;
     char msgText[chunkSize+1];
 };
 
+// struct used for receiving file paths 
 struct filePathBuffer{
   long msgType;
   char msgText[filePathMsgSize+1];

@@ -9,68 +9,67 @@ char *getChunkData(int mapperID) {
   struct myMsgBuffer chunk;
   chunk.msgType = mapperID;
   memset(chunk.msgText, '\0', chunkSize+1);
-  msgrcv(qid, &chunk, sizeof(struct myMsgBuffer), mapperID, 0);
+  if (msgrcv(qid, &chunk, sizeof(struct myMsgBuffer), mapperID, 0) == -1) {
+    printf("failed to receive message in getChunkData() for mapperID %d\n", mapperID);
+    exit(0);
+  }
   // check for END message and send ACK to master
   char* c = (char *)(malloc(sizeof(char)*(chunkSize+1)));
   strcpy(c, chunk.msgText);
-  if(!strcmp(c, ENDMSG)){
-    struct myMsgBuffer endmsg;
-    endmsg.msgType = ACKTYPE;
-    strcpy(endmsg.msgText, ACKMSG);
-    msgsnd(qid, &endmsg, sizeof(struct myMsgBuffer), 0);
-    return NULL;
+  if(!strcmp(c, ENDMSG)){ // checks if an end message is received
+    struct myMsgBuffer ackmsg;
+    ackmsg.msgType = ACKTYPE;
+    strcpy(ackmsg.msgText, ACKMSG);
+    if (msgsnd(qid, &ackmsg, sizeof(struct myMsgBuffer), 0) == -1) { // send an ack message 
+      printf("failed to send message in getChunkData() for mapperID %d\n", mapperID);
+      exit(0);
+    }
+    return NULL; // no more chunks to read, return null
   }
-  return c;
+  return c; // returns the received chunk text
 }
 
 // sends chunks of size 1024 to the mappers in RR fashion
 void sendChunkData(char *inputFile, int nMappers) {
-  printf("in send chunk\n");
   key_t key = ftok(".", 5584353); // generating a unique key
   int qid;
-  if ((qid = msgget(key, PERM | IPC_CREAT)) < 0) {
-    printf("msgget error\n");
-  } // creating the message queue
+  if ((qid = msgget(key, PERM | IPC_CREAT)) < 0) { // creating the message queue
+    printf("failed to create message queue in sendChunkData()\n");
+    exit(0);
+  }
 
   int fd = open(inputFile, O_CREAT | O_RDONLY, 0777); // open the file
 
   // keeps track of which mapper to send data to in RR fashion
   long onMapper = 1;
 
-  int nread;
+  int nread; // keeps track of bytes read
   struct myMsgBuffer chunk; // the buffer used to send chunks of data to the mappers
   memset(chunk.msgText, '\0', chunkSize+1);
   while((nread = read(fd, chunk.msgText, chunkSize)) > 0){ // send messages to queue in RR fashion
-    //printf("buffer: %s\nnread: %d\n", chunk.msgText, nread);
     if(nread == chunkSize){ // find the closest space if nread == 1024
       int i = 0;
-      while(chunk.msgText[nread+i-1] != ' '){
-
-	chunk.msgText[nread+i-1] = '\0';
-	i--;
+      while(chunk.msgText[nread+i-1] != ' '){ // loop until a space is found
+	       chunk.msgText[nread+i-1] = '\0'; // erase the word that was cut off
+	        i--;
       }
       chunk.msgText[nread+i-1] = '\0';
-      lseek(fd, i, SEEK_CUR); // go back to space in file and skip over it
-      //printf("i: %d\nseek: %d\n", i, SEEK_CUR);
+      lseek(fd, i, SEEK_CUR); // go back to space in file
     }
     chunk.msgType = onMapper; // sets msg type to current mapper
-    if(msgsnd(qid, &chunk, sizeof(struct myMsgBuffer), 0) == -1){
-      perror("failed to send msg\n");
-    }// sends chunk to mapper
-    /*struct myMsgBuffer recv;
-    memset(chunk.msgText, '\0', chunkSize+1);
-    msgrcv(qid, &recv, sizeof(chunk.msgText), 0, 0);
-    printf("msg received for %d: %s\n", onMapper, recv.msgText);*/
+    if(msgsnd(qid, &chunk, sizeof(struct myMsgBuffer), 0) == -1){ // sends chunk to mapper
+      printf("failed to send message in sendChunkData() for mapperID %ld\n", onMapper);
+      exit(0);
+    }
 
     // set to next mapper
     onMapper++;
-    if(onMapper > nMappers){
+    if(onMapper > nMappers){ // to ensure round robin fashion
       onMapper = 1;
     }
     memset(chunk.msgText, '\0', chunkSize+1);
   }
   close(fd); // close the file as we have written out all of its contents
-  printf("out of while loop\n");
 
   // Send END messages to each mapper
   memset(chunk.msgText, '\0', chunkSize+1);
@@ -78,15 +77,17 @@ void sendChunkData(char *inputFile, int nMappers) {
   for(int i = 1; i <= nMappers; i++){
     chunk.msgType = i;
     if(msgsnd(qid, &chunk, sizeof(struct myMsgBuffer), 0) == -1){
-      perror("Failed to send end msg\n");
+      printf("Failed to send end message in sendChunkData() for mapperID %d\n", i);
+      exit(0);
     }
   }
-  printf("end msgs sent\n");
   // wait for ACK from mappers
   for(int i = 0; i < nMappers; i++){
-    msgrcv(qid, &chunk, sizeof(struct myMsgBuffer), ACKTYPE, 0);
+    if (msgrcv(qid, &chunk, sizeof(struct myMsgBuffer), ACKTYPE, 0) == -1){
+      printf("Failed to receive ack message in sendChunkData()\n");
+      exit(0);
+    }
   }
-  printf("received acks!\n");
   // close the message queue
   msgctl(qid, IPC_RMID, 0);
 }
@@ -106,91 +107,105 @@ int hashFunction(char* key, int reducers){
 int getInterData(char *key, int reducerID) {
   // open message queue
   key_t k = ftok(".", 5584353); // generating a unique key
-  int qid = msgget(k, PERM | IPC_CREAT); // creating the message queue
+  int qid;
+  if ((qid = msgget(k, PERM | IPC_CREAT)) < 0) { // creating the message queue
+    printf("failed to create message queue in getInterData()\n");
+    exit(0);
+  }
   // receive chunk from the master
   struct filePathBuffer f;
   f.msgType = reducerID;
   memset(f.msgText, '\0', filePathMsgSize+1);
-  msgrcv(qid, &f, sizeof(struct filePathBuffer), reducerID, 0);
-  printf("reducerID caller: %d    f.msgtype is %d\n", reducerID, f.msgType);
+  if (msgrcv(qid, &f, sizeof(struct filePathBuffer), reducerID, 0) == -1) {
+    printf("failed to receive message in getInterData() for reducerID %d\n", reducerID);
+    exit(0);
+  }
   // check for END message and send ACK to master
-  //char cmp[filePathMsgSize+1];
-  //strcpy(cmp, f.msgText);
-  printf("f.msgText is %s\n", f.msgText);
   if(!strcmp(f.msgText, ENDMSG)){
-    printf("getinderdata if\n");
     f.msgType = ACKTYPE;
     memset(f.msgText, '\0', filePathMsgSize+1);
     strcpy(f.msgText, ACKMSG);
-    msgsnd(qid, &f, sizeof(struct filePathBuffer), 0);
-    return 0;
+    if (msgsnd(qid, &f, sizeof(struct filePathBuffer), 0) == -1) {
+      printf("failed to send ack message in getInterData() from reducerID %d\n", reducerID);
+      exit(0);
+    }
+    return 0; // no more file paths to receive
   }else{
     strcpy(key, f.msgText); // copy file path to the key
-    return 1;
+    return 1; //  more paths to receive
   }
-  return 0;
 }
 
 // Goes through a directory and sends msgs to reducers about file paths to .txt files
 int traverseDirectory(int mapperID, int qid, int nReducers){
-  printf("in traverse for mapper %d\n", mapperID);
+  // building general path for mapout
   char path[50] = "output/MapOut/Map_";
   char id[5];
   sprintf(id, "%d/", mapperID);
   strcat(path, id);
-  printf("built path\n");
+
+  // opening directory
   DIR* dir = opendir(path);
   if(dir==NULL){
-    printf("The path passed is invalid");
-    return -1;
+    printf("The path passed is invalid in traverseDirectory()\n");
+    exit(0);
   }
-  printf("opened path\n");
   struct dirent* entry;
 
-  while ((entry = readdir(dir)) != NULL) {
+  while ((entry = readdir(dir)) != NULL) { // read the directory
 
     if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
       continue; // do nothing for these directories
 
     if (entry->d_type == DT_REG) { // only care about .txt files
-      printf("in file: %s\n", entry->d_name);
       struct filePathBuffer f;
       strcpy(f.msgText, path);
 
       strcat(f.msgText, entry->d_name); // construct file path to send
-      f.msgType = hashFunction(f.msgText, nReducers) + 1;
-      msgsnd(qid, (void *) &f, sizeof(struct filePathBuffer), 0); // send file path to reducer
+      f.msgType = hashFunction(f.msgText, nReducers) + 1; // + 1 because hash function returns from 0 to nReducers - 1
+      if (msgsnd(qid, (void *) &f, sizeof(struct filePathBuffer), 0) == -1) {  // send file path to reducer
+        printf("failed to send message in traverseDirectory() for reducerID %ld\n", f.msgType);
+        exit(0);
+      }
     }
   }
-  closedir(dir);
+  if (closedir(dir) == -1) { // close directory
+    printf("failed to close directory in traverseDirectory() for mapperID %d\n", mapperID);
+    exit(0);
+  }
   return 0;
 }
 
 void shuffle(int nMappers, int nReducers) {
-  printf("start shuffle\n");
   // open message queue
-  key_t key = ftok(".", 5584353); // generating a unique key
-  int qid = msgget(key, PERM | IPC_CREAT); // creating the message queue
+  key_t key = ftok(".", 5584353); // generating a unique ke
+  int qid;
+  if ((qid = msgget(key, PERM | IPC_CREAT)) < 0) { // creating the message queue
+    printf("failed to create message queue in shuffle()\n");
+    exit(0);
+  }
   // traverse the directory of each Mapper and send the word filepath to the reducers
-  printf("about to traverse\n");
   for(int i = 1; i <= nMappers; i++){
     traverseDirectory(i, qid, nReducers);
   }
-  printf("traversed dir\n");
   //send END message to reducers
   struct filePathBuffer endmsg;
 
   strcpy(endmsg.msgText, ENDMSG);
   for(int i = 1; i <= nReducers; i++){
     endmsg.msgType = i;
-    msgsnd(qid, &endmsg, sizeof(struct filePathBuffer), 0);
+    if (msgsnd(qid, &endmsg, sizeof(struct filePathBuffer), 0) == -1) {
+      printf("failed to send message in shuffle() for reducerID %d\n", i);
+      exit(0);
+    }
   }
-  printf("send end msgs to reducers\n");
   // wait for ACK from the reducers for END notification
   for(int i = 0; i < nReducers; i++){
-    msgrcv(qid, &endmsg, sizeof(struct filePathBuffer), ACKTYPE, 0);
+    if (msgrcv(qid, &endmsg, sizeof(struct filePathBuffer), ACKTYPE, 0) == -1) {
+      printf("failed to receive ack message in shuffle()\n");
+      exit(0);
+    }
   }
-  printf("received ACK from reducers\n");
   // close the message queue
   msgctl(qid, IPC_RMID, 0);
 }
